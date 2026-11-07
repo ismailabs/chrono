@@ -1,0 +1,9 @@
+{
+  "id": "chrono-clock",
+  "name": "Chrono",
+  "version": "1.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "A minimal live clock with animated, glitchy hour, minute and seconds bars, date, 12/24-hour format and an optional status bar clock.",
+  "author": "Chrono Contributors",
+  "isDesktopOnly": false
+}

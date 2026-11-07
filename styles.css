@@ -1,0 +1,980 @@
+/* ==========================================================================
+   Chrono
+   Apple-inspired clock. Colours come from Obsidian's own variables, so the
+   view follows the active theme (light, dark, and community themes).
+   ========================================================================== */
+
+.view-content.chrono-root {
+  padding: 0;
+}
+
+/* --- Tokens --------------------------------------------------------------- */
+
+.chrono-view {
+  --chrono-font: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+    "SF Pro Text", var(--font-interface), system-ui, sans-serif;
+  --chrono-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --chrono-duration: 380ms;
+  --chrono-radius: 22px;
+
+  /* Glitch palette: the classic cyan / magenta channel split. */
+  --chrono-glitch-a: #00e5ff;
+  --chrono-glitch-b: #ff2bd6;
+  /* Colour of the gaps cut into the bars. Must match the card surface. */
+  --chrono-gap: var(--background-primary);
+  --chrono-scanline: rgba(0, 0, 0, 0.025);
+  --chrono-scan-band: rgba(0, 0, 0, 0.04);
+
+  /* Light appearance (default) */
+  --chrono-shadow: 0 1px 2px rgba(0, 0, 0, 0.04),
+    0 10px 28px -10px rgba(0, 0, 0, 0.12);
+  --chrono-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.05),
+    0 16px 36px -12px rgba(0, 0, 0, 0.17);
+  --chrono-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --chrono-thumb: var(--background-primary);
+  --chrono-thumb-shadow: 0 1px 2px rgba(0, 0, 0, 0.12),
+    0 2px 6px rgba(0, 0, 0, 0.08);
+
+  container-type: inline-size;
+  container-name: chrono;
+
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--size-4-5, 20px);
+  padding: var(--size-4-4, 16px);
+  font-family: var(--chrono-font);
+  color: var(--text-normal);
+}
+
+/* Dark appearance */
+.theme-dark .chrono-view {
+  --chrono-shadow: 0 1px 2px rgba(0, 0, 0, 0.35),
+    0 14px 32px -12px rgba(0, 0, 0, 0.6);
+  --chrono-shadow-hover: 0 1px 2px rgba(0, 0, 0, 0.4),
+    0 20px 40px -14px rgba(0, 0, 0, 0.7);
+  --chrono-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --chrono-thumb: rgba(255, 255, 255, 0.14);
+  --chrono-thumb-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --chrono-scanline: rgba(255, 255, 255, 0.03);
+  --chrono-scan-band: rgba(255, 255, 255, 0.05);
+}
+
+/* --- Entrance (one orchestrated moment when the view opens) --------------- */
+
+@keyframes chrono-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes chrono-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* --- Card ----------------------------------------------------------------- */
+
+.chrono-view .chrono-card {
+  position: relative;
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 26rem;
+  padding: clamp(22px, 8cqw, 40px) clamp(16px, 6cqw, 32px);
+  text-align: center;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--chrono-radius);
+  box-shadow: var(--chrono-highlight), var(--chrono-shadow);
+  transition: box-shadow var(--chrono-duration) var(--chrono-ease),
+    transform var(--chrono-duration) var(--chrono-ease);
+  /* "backwards" so the finished animation never overrides hover transforms */
+  animation: chrono-enter 640ms var(--chrono-ease) backwards;
+}
+
+@media (hover: hover) {
+  .chrono-view .chrono-card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--chrono-highlight), var(--chrono-shadow-hover);
+  }
+}
+
+/* --- Time ----------------------------------------------------------------- */
+
+.chrono-view .chrono-time {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  font-size: 2.75rem; /* fallback without container units */
+  font-size: clamp(1.75rem, 25cqw, 5.25rem);
+  font-weight: 300;
+  line-height: 1.05;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-normal);
+}
+
+/* Six digits need a smaller size than four. */
+.chrono-view .chrono-time[data-seconds="true"] {
+  font-size: 2rem;
+  font-size: clamp(1.5rem, 17cqw, 4rem);
+}
+
+.chrono-view .chrono-colon {
+  margin: 0 0.02em;
+  opacity: 0.5;
+  transform: translateY(-0.06em);
+}
+
+.chrono-view .chrono-seconds {
+  display: inline-flex;
+  align-items: baseline;
+  color: var(--text-muted);
+  animation: chrono-fade 360ms ease backwards;
+}
+
+.chrono-view .chrono-period {
+  margin-left: 0.4em;
+  font-size: 0.26em;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--text-muted);
+}
+
+.chrono-view .chrono-is-hidden {
+  display: none;
+}
+
+/* --- Glitch: digits ---------------------------------------------------------- */
+
+.chrono-view .chrono-glitch-text {
+  position: relative;
+  display: inline-block;
+}
+
+/* Ghost copies of the digits, read from data-text. */
+.chrono-view .chrono-glitch-text::before,
+.chrono-view .chrono-glitch-text::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.chrono-view .chrono-glitch-text::before {
+  color: var(--chrono-glitch-a);
+}
+
+.chrono-view .chrono-glitch-text::after {
+  color: var(--chrono-glitch-b);
+}
+
+.chrono-view[data-glitch="on"] .chrono-glitch-text.is-glitching {
+  animation: chrono-digit-jitter 360ms steps(1) 1;
+}
+
+.chrono-view[data-glitch="on"] .chrono-glitch-text.is-glitching::before {
+  animation: chrono-digit-slice-a 360ms steps(1) 1;
+}
+
+.chrono-view[data-glitch="on"] .chrono-glitch-text.is-glitching::after {
+  animation: chrono-digit-slice-b 360ms steps(1) 1;
+}
+
+/* Seconds change every second, so they get a shorter, lighter burst. */
+.chrono-view[data-glitch="on"] .chrono-second.is-glitching {
+  animation: chrono-digit-jitter-lite 260ms steps(1) 1;
+}
+
+.chrono-view[data-glitch="on"] .chrono-second.is-glitching::before {
+  animation: chrono-digit-slice-a 260ms steps(1) 1;
+}
+
+.chrono-view[data-glitch="on"] .chrono-second.is-glitching::after {
+  animation: chrono-digit-slice-b 260ms steps(1) 1;
+}
+
+@keyframes chrono-digit-jitter {
+  0%,
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+  14% {
+    transform: translate(-3px, 1px) skewX(-10deg);
+    opacity: 0.6;
+  }
+  28% {
+    transform: translate(4px, 0);
+    opacity: 1;
+  }
+  42% {
+    transform: translate(0, -1px) skewX(6deg);
+    opacity: 0.35;
+  }
+  56% {
+    transform: none;
+    opacity: 1;
+  }
+  72% {
+    transform: translate(-2px, 0);
+    opacity: 0.7;
+  }
+  86% {
+    transform: translate(1px, 0);
+    opacity: 1;
+  }
+}
+
+@keyframes chrono-digit-jitter-lite {
+  0%,
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+  20% {
+    transform: translate(-2px, 0);
+    opacity: 0.7;
+  }
+  45% {
+    transform: translate(2px, 0) skewX(-6deg);
+    opacity: 1;
+  }
+  70% {
+    transform: none;
+    opacity: 0.8;
+  }
+}
+
+@keyframes chrono-digit-slice-a {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+    transform: translate(-5px, 0);
+    clip-path: inset(8% 0 62% 0);
+  }
+  24% {
+    opacity: 1;
+    transform: translate(4px, 0);
+    clip-path: inset(55% 0 12% 0);
+  }
+  40% {
+    opacity: 1;
+    transform: translate(-3px, 0);
+    clip-path: inset(30% 0 38% 0);
+  }
+  56% {
+    opacity: 0;
+  }
+  72% {
+    opacity: 1;
+    transform: translate(3px, 0);
+    clip-path: inset(72% 0 0 0);
+  }
+  88% {
+    opacity: 0;
+  }
+}
+
+@keyframes chrono-digit-slice-b {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  16% {
+    opacity: 1;
+    transform: translate(5px, 0);
+    clip-path: inset(60% 0 8% 0);
+  }
+  32% {
+    opacity: 1;
+    transform: translate(-4px, 0);
+    clip-path: inset(10% 0 66% 0);
+  }
+  48% {
+    opacity: 0;
+  }
+  64% {
+    opacity: 1;
+    transform: translate(4px, 0);
+    clip-path: inset(40% 0 30% 0);
+  }
+  80% {
+    opacity: 1;
+    transform: translate(-2px, 0);
+    clip-path: inset(0 0 80% 0);
+  }
+  92% {
+    opacity: 0;
+  }
+}
+
+/* A rare, bigger glitch: the whole readout tears sideways. */
+.chrono-view[data-glitch="on"] .chrono-time.is-tearing {
+  animation: chrono-tear 480ms steps(1) 1;
+}
+
+@keyframes chrono-tear {
+  0%,
+  100% {
+    transform: none;
+    text-shadow: none;
+    clip-path: none;
+  }
+  10% {
+    transform: translateX(-7px) skewX(-14deg);
+    text-shadow: 3px 0 var(--chrono-glitch-a), -3px 0 var(--chrono-glitch-b);
+  }
+  20% {
+    transform: translateX(6px) skewX(9deg);
+    text-shadow: -3px 0 var(--chrono-glitch-a), 3px 0 var(--chrono-glitch-b);
+    clip-path: inset(0 -12px 52% -12px);
+  }
+  32% {
+    transform: translateX(-5px);
+    clip-path: inset(44% -12px 0 -12px);
+  }
+  44% {
+    transform: none;
+    text-shadow: none;
+    clip-path: none;
+  }
+  58% {
+    transform: translateX(4px) skewX(-6deg);
+    text-shadow: 2px 0 var(--chrono-glitch-a), -2px 0 var(--chrono-glitch-b);
+  }
+  72% {
+    transform: translateX(-2px);
+    text-shadow: -2px 0 var(--chrono-glitch-a), 2px 0 var(--chrono-glitch-b);
+  }
+  86% {
+    transform: none;
+    text-shadow: none;
+  }
+}
+
+/* The colons blink like a failing display. */
+.chrono-view[data-glitch="on"] .chrono-colon {
+  animation: chrono-colon-blink 1s steps(1) infinite;
+}
+
+@keyframes chrono-colon-blink {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.14;
+  }
+  62% {
+    opacity: 0.5;
+  }
+  70% {
+    opacity: 0.25;
+  }
+  76% {
+    opacity: 0.5;
+  }
+}
+
+/* --- Glitch: scanlines and a slow sweep across the card ------------------- */
+
+.chrono-view[data-glitch="on"] .chrono-card::before,
+.chrono-view[data-glitch="on"] .chrono-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.chrono-view[data-glitch="on"] .chrono-card::before {
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    var(--chrono-scanline) 0 1px,
+    transparent 1px 3px
+  );
+}
+
+.chrono-view[data-glitch="on"] .chrono-card::after {
+  top: 0;
+  height: 36%;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    var(--chrono-scan-band),
+    transparent
+  );
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--interactive-accent) 11%, transparent),
+    transparent
+  );
+  animation: chrono-sweep 5.5s linear infinite;
+}
+
+@keyframes chrono-sweep {
+  from {
+    transform: translateY(-110%);
+  }
+  to {
+    transform: translateY(290%);
+  }
+}
+
+/* --- Collapsible rows ----------------------------------------------------- */
+
+.chrono-view .chrono-collapse {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows var(--chrono-duration) var(--chrono-ease),
+    opacity var(--chrono-duration) var(--chrono-ease);
+}
+
+.chrono-view .chrono-collapse.is-collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.chrono-view .chrono-collapse-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* --- Hour / minute / second bars ------------------------------------------ */
+
+.chrono-view .chrono-bars {
+  width: min(100%, 18rem);
+  margin: clamp(14px, 5cqw, 22px) auto clamp(10px, 4cqw, 16px);
+}
+
+/* Margins live on the row, inside the collapsing wrapper, so they close
+   up together with it. The side margin leaves room for glow and ghosts. */
+.chrono-view .chrono-bar {
+  display: grid;
+  grid-template-columns: 2.4rem 1fr;
+  align-items: center;
+  column-gap: 8px;
+  margin: 5px 8px;
+}
+
+.chrono-view .chrono-bar-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-align: left;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.chrono-view .chrono-bar-track {
+  position: relative;
+  height: 5px;
+  background: var(--background-modifier-border);
+  border-radius: 1px;
+}
+
+/* Tick gaps: one thin slit at the end of every segment, drawn on top. */
+.chrono-view .chrono-bar-track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background-image: linear-gradient(
+    90deg,
+    transparent calc(100% - 2px),
+    var(--chrono-gap) calc(100% - 2px)
+  );
+  background-size: calc(100% / var(--chrono-segs, 12)) 100%;
+}
+
+.chrono-view .chrono-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc(var(--chrono-p, 0) * 100%);
+  background-color: var(--interactive-accent);
+  /* Data-block stripes that crawl along the fill. */
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.26) 0 3px,
+    transparent 3px 8px
+  );
+  background-size: 8px 100%;
+  border-radius: 1px;
+  transition: width 260ms linear;
+  animation: chrono-crawl 640ms linear infinite;
+}
+
+.chrono-view .chrono-bar-fill.chrono-no-transition {
+  transition: none;
+}
+
+/* Channel-split ghosts, invisible until a glitch burst. */
+.chrono-view .chrono-bar-fill::before,
+.chrono-view .chrono-bar-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chrono-view .chrono-bar-fill::before {
+  background: var(--chrono-glitch-a);
+}
+
+.chrono-view .chrono-bar-fill::after {
+  background: var(--chrono-glitch-b);
+}
+
+/* The bright, flickering leading edge. */
+.chrono-view .chrono-bar-head {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  right: -1px;
+  z-index: 3;
+  width: 3px;
+  background: var(--interactive-accent);
+  border-radius: 1px;
+  box-shadow: 0 0 6px 1px var(--interactive-accent);
+  animation: chrono-head-flicker 1.3s steps(1) infinite;
+}
+
+@keyframes chrono-crawl {
+  to {
+    background-position: 8px 0;
+  }
+}
+
+@keyframes chrono-head-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  18% {
+    opacity: 0.35;
+  }
+  24% {
+    opacity: 1;
+  }
+  57% {
+    opacity: 0.7;
+  }
+  61% {
+    opacity: 1;
+  }
+  83% {
+    opacity: 0.2;
+  }
+  86% {
+    opacity: 1;
+  }
+}
+
+/* --- Glitch: bars ------------------------------------------------------------ */
+
+.chrono-view[data-glitch="on"] .chrono-bar.is-glitching .chrono-bar-fill {
+  animation: chrono-crawl 640ms linear infinite,
+    chrono-bar-jitter 380ms steps(1) 1;
+}
+
+.chrono-view[data-glitch="on"] .chrono-bar.is-glitching .chrono-bar-fill::before {
+  animation: chrono-bar-ghost-a 380ms steps(1) 1;
+}
+
+.chrono-view[data-glitch="on"] .chrono-bar.is-glitching .chrono-bar-fill::after {
+  animation: chrono-bar-ghost-b 380ms steps(1) 1;
+}
+
+.chrono-view[data-glitch="on"] .chrono-bar.is-glitching .chrono-bar-label {
+  animation: chrono-label-glitch 380ms steps(1) 1;
+}
+
+.chrono-view[data-glitch="on"] .chrono-bar.is-glitching .chrono-bar-head {
+  animation: chrono-head-surge 380ms steps(1) 1;
+}
+
+@keyframes chrono-bar-jitter {
+  0% {
+    transform: none;
+  }
+  12% {
+    transform: translateX(-3px) scaleY(1.7);
+  }
+  25% {
+    transform: translateX(2px);
+  }
+  38% {
+    transform: translateX(0) scaleY(0.45);
+  }
+  52% {
+    transform: translateX(4px) scaleY(1.3);
+  }
+  68% {
+    transform: translateX(-2px);
+  }
+  84% {
+    transform: translateX(1px) scaleY(1.5);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes chrono-bar-ghost-a {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.9;
+    transform: translate(-5px, -2px);
+    clip-path: inset(0 45% 0 0);
+  }
+  30% {
+    opacity: 0.9;
+    transform: translate(4px, 1px);
+    clip-path: inset(0 0 0 55%);
+  }
+  48% {
+    opacity: 0;
+  }
+  66% {
+    opacity: 0.9;
+    transform: translate(-3px, 0);
+    clip-path: inset(0 20% 0 30%);
+  }
+  86% {
+    opacity: 0;
+  }
+}
+
+@keyframes chrono-bar-ghost-b {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  18% {
+    opacity: 0.85;
+    transform: translate(5px, 2px);
+    clip-path: inset(0 0 0 40%);
+  }
+  38% {
+    opacity: 0;
+  }
+  56% {
+    opacity: 0.85;
+    transform: translate(-4px, -1px);
+    clip-path: inset(0 55% 0 10%);
+  }
+  76% {
+    opacity: 0.85;
+    transform: translate(3px, 1px);
+    clip-path: inset(0 10% 0 60%);
+  }
+  92% {
+    opacity: 0;
+  }
+}
+
+@keyframes chrono-label-glitch {
+  0%,
+  100% {
+    transform: none;
+    color: var(--text-faint);
+    opacity: 1;
+  }
+  14% {
+    transform: translateX(-2px);
+    color: var(--chrono-glitch-a);
+  }
+  30% {
+    transform: translateX(2px);
+    color: var(--chrono-glitch-b);
+    opacity: 0.4;
+  }
+  46% {
+    transform: none;
+    color: var(--text-faint);
+    opacity: 1;
+  }
+  64% {
+    transform: translateX(-1px);
+    color: var(--chrono-glitch-a);
+    opacity: 0.6;
+  }
+  82% {
+    transform: none;
+    color: var(--text-faint);
+    opacity: 1;
+  }
+}
+
+@keyframes chrono-head-surge {
+  0%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+  20% {
+    opacity: 1;
+    transform: scale(2.2, 1.4);
+  }
+  40% {
+    opacity: 0.2;
+    transform: none;
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.8, 1.2);
+  }
+  80% {
+    opacity: 0.5;
+    transform: none;
+  }
+}
+
+/* --- Date and zone --------------------------------------------------------- */
+
+.chrono-view .chrono-date {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 2px;
+}
+
+.chrono-view .chrono-weekday {
+  font-size: clamp(0.95rem, 4.8cqw, 1.2rem);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--text-normal);
+}
+
+.chrono-view .chrono-datetext {
+  font-size: clamp(0.82rem, 4cqw, 0.95rem);
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+.chrono-view .chrono-zone {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 0.5em;
+  margin-top: 12px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.chrono-view .chrono-zone-offset {
+  font-variant-numeric: tabular-nums;
+}
+
+.chrono-view .chrono-zone span:empty {
+  display: none;
+}
+
+/* --- Controls -------------------------------------------------------------- */
+
+.chrono-view .chrono-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 10px;
+  width: 100%;
+  max-width: 26rem;
+  animation: chrono-enter 640ms var(--chrono-ease) 120ms backwards;
+}
+
+/* Neutralise Obsidian's default button chrome in every state. */
+.chrono-view .chrono-btn,
+.chrono-view .chrono-btn:hover,
+.chrono-view .chrono-btn:active,
+.chrono-view .chrono-btn:focus {
+  appearance: none;
+  box-shadow: none;
+  border: 0;
+  height: auto;
+  margin: 0;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.chrono-view .chrono-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+/* Segmented control (12-hour / 24-hour) */
+.chrono-view .chrono-segment {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 2px;
+  background: var(--background-modifier-hover);
+  border-radius: 999px;
+}
+
+.chrono-view .chrono-segment-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / 2);
+  background: var(--chrono-thumb);
+  border-radius: 999px;
+  box-shadow: var(--chrono-thumb-shadow);
+  transition: transform var(--chrono-duration) var(--chrono-ease);
+}
+
+.chrono-view .chrono-segment[data-value="24"] .chrono-segment-thumb {
+  transform: translateX(100%);
+}
+
+.chrono-view .chrono-segment-btn,
+.chrono-view .chrono-segment-btn:hover,
+.chrono-view .chrono-segment-btn:active,
+.chrono-view .chrono-segment-btn:focus {
+  position: relative;
+  z-index: 1;
+  padding: 6px 14px;
+  color: var(--text-muted);
+  background: transparent;
+  border-radius: 999px;
+  transition: color 200ms ease;
+}
+
+.chrono-view .chrono-segment-btn:hover {
+  color: var(--text-normal);
+}
+
+.chrono-view .chrono-segment-btn[aria-checked="true"],
+.chrono-view .chrono-segment-btn[aria-checked="true"]:hover {
+  color: var(--text-normal);
+}
+
+/* Switch chips (Seconds, Date) */
+.chrono-view .chrono-chip,
+.chrono-view .chrono-chip:hover,
+.chrono-view .chrono-chip:active,
+.chrono-view .chrono-chip:focus {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+  border-radius: 999px;
+  transition: background-color 200ms ease, color 200ms ease,
+    transform 160ms var(--chrono-ease);
+}
+
+.chrono-view .chrono-chip:hover {
+  background: var(--background-modifier-border);
+  color: var(--text-normal);
+}
+
+.chrono-view .chrono-chip:active {
+  transform: scale(0.96);
+}
+
+.chrono-view .chrono-chip[aria-checked="true"] {
+  color: var(--text-normal);
+}
+
+.chrono-view .chrono-chip-dot {
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--text-faint);
+  border-radius: 50%;
+  transition: background-color 200ms ease, border-color 200ms ease,
+    transform 300ms var(--chrono-ease);
+}
+
+.chrono-view .chrono-chip[aria-checked="true"] .chrono-chip-dot {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  transform: scale(1.1);
+}
+
+/* --- Narrow sidebars -------------------------------------------------------- */
+
+@container chrono (max-width: 220px) {
+  .chrono-view .chrono-segment-btn,
+  .chrono-view .chrono-segment-btn:hover {
+    padding: 6px 10px;
+  }
+}
+
+/* --- Status bar ------------------------------------------------------------- */
+
+.chrono-statusbar {
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.chrono-statusbar:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-s, 4px);
+}
+
+.chrono-statusbar.chrono-is-hidden {
+  display: none;
+}
+
+/* --- Reduced motion --------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .chrono-view,
+  .chrono-view *,
+  .chrono-view *::before,
+  .chrono-view *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .chrono-view .chrono-card:hover {
+    transform: none;
+  }
+
+  .chrono-view .chrono-card::before,
+  .chrono-view .chrono-card::after {
+    display: none !important;
+  }
+}
