@@ -1,109 +1,70 @@
 import type { ChronoSettings } from "./settings";
+import { cityNameForZone } from "./timeZones";
+import { relativeDay, ZoneReader, type ZoneReading } from "./zoneReader";
+
+export interface LocalReading extends ZoneReading {
+  zoneName: string;
+}
+
+export interface WorldReading extends ZoneReading {
+  zone: string;
+  name: string;
+  dayOffset: -1 | 0 | 1;
+}
 
 /** Everything the UI needs to draw one frame of the clock. */
 export interface ClockSnapshot {
-  hour: string;
-  minute: string;
-  second: string;
-  /** AM/PM text in 12-hour mode, empty string in 24-hour mode. */
-  period: string;
-  weekday: string;
-  date: string;
-  zoneName: string;
-  zoneOffset: string;
-  /** Position within the current minute, 0 to 1 (the seconds bar). */
-  progress: number;
-  /** Position within the current hour, 0 to 1 (the minutes bar). */
-  minuteProgress: number;
-  /** Position within the 12 or 24 hour cycle, 0 to 1 (the hours bar). */
-  hourProgress: number;
-  /** Number of ticks on the hours bar: 12 or 24, matching the hour format. */
-  hourSegments: number;
-  /** Compact text for the status bar. */
+  local: LocalReading;
+  /** Fraction of the device's current day that has elapsed, 0 to 1. */
+  dayProgress: number;
+  worlds: WorldReading[];
+  /** Compact local time for the status bar. */
   statusText: string;
-  /** Full date, for tooltips. */
-  tooltip: string;
   /** Minute-precision text for assistive technology. */
   label: string;
 }
 
-type SnapshotBase = Omit<
-  ClockSnapshot,
-  "progress" | "minuteProgress" | "hourProgress"
->;
-type PartMap = Partial<Record<Intl.DateTimeFormatPartTypes, string>>;
+export type ClockListener = (snapshot: ClockSnapshot) => void;
 
-function makeFormat(
-  locale: string | undefined,
-  options: Intl.DateTimeFormatOptions
-): Intl.DateTimeFormat {
-  try {
-    return new Intl.DateTimeFormat(locale, options);
-  } catch (error) {
-    console.error("Chrono: locale not supported, using the default.", error);
-    return new Intl.DateTimeFormat(undefined, options);
-  }
-}
+type CachedSnapshot = Omit<ClockSnapshot, "dayProgress">;
 
-function toParts(format: Intl.DateTimeFormat, date: Date): PartMap {
-  const parts: PartMap = {};
-  for (const part of format.formatToParts(date)) parts[part.type] = part.value;
-  return parts;
-}
-
-function zoneCity(): string {
+function localZoneName(): string {
   try {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (!zone) return "Local time";
-    if (zone === "UTC" || zone === "Etc/UTC") return "UTC";
-    const last = zone.split("/").pop() ?? zone;
-    return last.replace(/_/g, " ");
+    return zone ? cityNameForZone(zone) : "Local time";
   } catch {
     return "Local time";
   }
 }
 
-function formatOffset(date: Date): string {
-  const total = -date.getTimezoneOffset();
-  const sign = total < 0 ? "\u2212" : "+";
-  const abs = Math.abs(total);
-  const hours = Math.floor(abs / 60);
-  const minutes = abs % 60;
-  const suffix = minutes ? `:${String(minutes).padStart(2, "0")}` : "";
-  return `UTC${sign}${hours}${suffix}`;
+function dayProgress(now: Date): number {
+  const seconds =
+    now.getHours() * 3600 +
+    now.getMinutes() * 60 +
+    now.getSeconds() +
+    now.getMilliseconds() / 1000;
+  return seconds / 86400;
 }
 
 /**
- * Formats a Date into display strings. Intl formatters are created once per
- * settings change, and each second's strings are cached, so repeated calls
- * within the same second are nearly free.
+ * Formats the local clock and every world clock for one settings state.
+ * Readings are cached per whole second, so repeated ticks within a second
+ * reuse the same strings.
  */
 export class ClockFormatter {
-  private readonly timeFormat: Intl.DateTimeFormat;
-  private readonly weekdayFormat: Intl.DateTimeFormat;
-  private readonly dateFormat: Intl.DateTimeFormat;
-  private readonly fullFormat: Intl.DateTimeFormat;
-  private cache: { key: number; base: SnapshotBase } | null = null;
+  private readonly localReader: ZoneReader;
+  private readonly worldReaders: { zone: string; name: string; reader: ZoneReader }[];
+  private cache: { key: number; base: CachedSnapshot } | null = null;
 
-  constructor(
-    private readonly settings: ChronoSettings,
-    locale?: string
-  ) {
-    const twelve = settings.hourFormat === "12";
-    this.timeFormat = makeFormat(locale, {
-      hour: twelve ? "numeric" : "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hourCycle: twelve ? "h12" : "h23",
-    });
-    this.weekdayFormat = makeFormat(locale, { weekday: "long" });
-    this.dateFormat = makeFormat(
-      locale,
-      settings.dateStyle === "long"
-        ? { day: "numeric", month: "long", year: "numeric" }
-        : { day: "numeric", month: "short" }
-    );
-    this.fullFormat = makeFormat(locale, { dateStyle: "full" });
+  constructor(private readonly settings: ChronoSettings) {
+    const hour12 = settings.hourFormat === "12";
+    const dateStyle = settings.dateStyle;
+    this.localReader = new ZoneReader({ hour12, dateStyle });
+    this.worldReaders = settings.worldClocks.map(({ zone, name }) => ({
+      zone,
+      name,
+      reader: new ZoneReader({ timeZone: zone, hour12, dateStyle }),
+    }));
   }
 
   snapshot(now: Date = new Date()): ClockSnapshot {
@@ -111,51 +72,36 @@ export class ClockFormatter {
     if (!this.cache || this.cache.key !== key) {
       this.cache = { key, base: this.build(now) };
     }
-
-    // Each bar is the fraction of its own unit that has elapsed, with the
-    // smaller units folded in so every bar glides instead of stepping.
-    const progress = (now.getSeconds() + now.getMilliseconds() / 1000) / 60;
-    const minuteProgress = (now.getMinutes() + progress) / 60;
-    const cycle = this.cache.base.hourSegments;
-    const hourProgress = ((now.getHours() % cycle) + minuteProgress) / cycle;
-
-    return { ...this.cache.base, progress, minuteProgress, hourProgress };
+    return { ...this.cache.base, dayProgress: dayProgress(now) };
   }
 
-  private build(now: Date): SnapshotBase {
-    const time = toParts(this.timeFormat, now);
-    const hour = time.hour ?? "";
-    const minute = time.minute ?? "";
-    const second = time.second ?? "";
-    const period =
-      this.settings.hourFormat === "12" ? (time.dayPeriod ?? "") : "";
+  private build(now: Date): CachedSnapshot {
+    const local = this.localReader.read(now);
+    const core = `${local.hour}:${local.minute}`;
+    const period = local.period ? ` ${local.period}` : "";
 
-    const full = this.fullFormat.format(now);
-    const core = `${hour}:${minute}`;
-    const withPeriod = (text: string) => (period ? `${text} ${period}` : text);
-
-    const city = zoneCity();
+    const worlds: WorldReading[] = this.settings.showWorldClocks
+      ? this.worldReaders.map(({ zone, name, reader }) => {
+          const reading = reader.read(now);
+          return {
+            ...reading,
+            zone,
+            name,
+            dayOffset: relativeDay(reading.dayNumber, local.dayNumber),
+          };
+        })
+      : [];
 
     return {
-      hour,
-      minute,
-      second,
-      period,
-      hourSegments: this.settings.hourFormat === "12" ? 12 : 24,
-      weekday: this.weekdayFormat.format(now),
-      date: this.dateFormat.format(now),
-      zoneName: city,
-      zoneOffset: city === "UTC" ? "" : formatOffset(now),
-      statusText: withPeriod(
-        this.settings.showSeconds ? `${core}:${second}` : core
-      ),
-      tooltip: full,
-      label: `${withPeriod(core)}, ${full}`,
+      local: { ...local, zoneName: localZoneName() },
+      worlds,
+      statusText: this.settings.showSeconds
+        ? `${core}:${local.second}${period}`
+        : `${core}${period}`,
+      label: `${core}${period}, ${local.fullDate}`,
     };
   }
 }
-
-export type ClockListener = (snapshot: ClockSnapshot) => void;
 
 /**
  * Owns the formatter and fans one tick out to every subscriber (sidebar
@@ -166,15 +112,12 @@ export class ClockEngine {
   private formatter: ClockFormatter;
   private readonly listeners = new Set<ClockListener>();
 
-  constructor(
-    settings: ChronoSettings,
-    private readonly locale?: string
-  ) {
-    this.formatter = new ClockFormatter(settings, locale);
+  constructor(settings: ChronoSettings) {
+    this.formatter = new ClockFormatter(settings);
   }
 
   configure(settings: ChronoSettings): void {
-    this.formatter = new ClockFormatter(settings, this.locale);
+    this.formatter = new ClockFormatter(settings);
   }
 
   /** Fresh snapshot without notifying anyone. */

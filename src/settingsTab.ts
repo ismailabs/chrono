@@ -34,9 +34,7 @@ export class ChronoSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Show seconds")
-      .setDesc(
-        "Display seconds and the seconds bar in the clock view, and seconds in the status bar."
-      )
+      .setDesc("Display seconds on your clock and on world clocks.")
       .addToggle((toggle) =>
         toggle.setValue(settings.showSeconds).onChange(async (value) => {
           await this.chrono.updateSettings({ showSeconds: value });
@@ -44,30 +42,8 @@ export class ChronoSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Show hour and minute bars")
-      .setDesc(
-        "Two progress bars under the time: how far through the hour cycle and the current hour you are."
-      )
-      .addToggle((toggle) =>
-        toggle.setValue(settings.showBars).onChange(async (value) => {
-          await this.chrono.updateSettings({ showBars: value });
-        })
-      );
-
-    new Setting(containerEl)
-      .setName("Glitch effects")
-      .setDesc(
-        "Animated glitching on the digits and bars. Always off when your system asks for reduced motion."
-      )
-      .addToggle((toggle) =>
-        toggle.setValue(settings.glitchEffects).onChange(async (value) => {
-          await this.chrono.updateSettings({ glitchEffects: value });
-        })
-      );
-
-    new Setting(containerEl)
       .setName("Show date")
-      .setDesc("Display the current day and date below the time.")
+      .setDesc("Display the weekday and date below your clock.")
       .addToggle((toggle) =>
         toggle.setValue(settings.showDate).onChange(async (value) => {
           await this.chrono.updateSettings({ showDate: value });
@@ -91,10 +67,47 @@ export class ChronoSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Show time zone")
-      .setDesc("Display your device's time zone under the date.")
+      .setDesc("Display your time zone name and UTC offset under your clock.")
       .addToggle((toggle) =>
         toggle.setValue(settings.showTimezone).onChange(async (value) => {
           await this.chrono.updateSettings({ showTimezone: value });
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Show day progress")
+      .setDesc("A thin line showing how much of the day has passed.")
+      .addToggle((toggle) =>
+        toggle.setValue(settings.showProgress).onChange(async (value) => {
+          await this.chrono.updateSettings({ showProgress: value });
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Density")
+      .setDesc("Compact reduces spacing and suits narrow sidebars.")
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("comfortable", "Comfortable")
+          .addOption("compact", "Compact")
+          .setValue(settings.density)
+          .onChange(async (value) => {
+            await this.chrono.updateSettings({
+              density: value === "compact" ? "compact" : "comfortable",
+            });
+          })
+      );
+
+    new Setting(containerEl).setName("World clocks").setHeading();
+
+    new Setting(containerEl)
+      .setName("Show world clocks")
+      .setDesc(
+        "Show the list of saved cities in the clock view. Add and arrange cities from the clock view itself."
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(settings.showWorldClocks).onChange(async (value) => {
+          await this.chrono.updateSettings({ showWorldClocks: value });
         })
       );
 
@@ -120,10 +133,13 @@ export class ChronoSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Restore defaults")
-      .setDesc("Reset every Chrono preference to its original value.")
+      .setDesc("Resets every option on this page. Your saved world clocks are kept.")
       .addButton((button) =>
         button.setButtonText("Restore defaults").onClick(async () => {
-          await this.chrono.updateSettings(getDefaultSettings());
+          await this.chrono.updateSettings({
+            ...getDefaultSettings(),
+            worldClocks: this.chrono.settings.worldClocks,
+          });
           this.display();
         })
       );

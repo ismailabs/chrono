@@ -8,6 +8,4 @@ export const VIEW_TYPE_CHRONO = "chrono-clock-view";
  */
 export const TICK_INTERVAL_MS = 250;
 
-/** Ambient glitch bursts fire at a random delay inside this window (ms). */
-export const GLITCH_MIN_DELAY_MS = 900;
-export const GLITCH_MAX_DELAY_MS = 3500;
+export const MAX_WORLD_CLOCKS = 12;

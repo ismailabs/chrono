@@ -5,6 +5,7 @@ import {
   ChronoSettings,
   getDefaultSettings,
   sanitizeSettings,
+  toStoredSettings,
 } from "./settings";
 import { ChronoSettingTab } from "./settingsTab";
 import { StatusBarClock } from "./statusBar";
@@ -38,15 +39,6 @@ export default class ChronoPlugin extends Plugin {
       callback: () => {
         void this.updateSettings({
           hourFormat: this.settings.hourFormat === "24" ? "12" : "24",
-        });
-      },
-    });
-    this.addCommand({
-      id: "toggle-glitch-effects",
-      name: "Toggle glitch effects",
-      callback: () => {
-        void this.updateSettings({
-          glitchEffects: !this.settings.glitchEffects,
         });
       },
     });
@@ -106,7 +98,7 @@ export default class ChronoPlugin extends Plugin {
     this.refreshAll();
 
     try {
-      await this.saveData(this.settings);
+      await this.saveData(toStoredSettings(this.settings));
     } catch (error) {
       console.error("Chrono: failed to save settings.", error);
       new Notice("Chrono could not save your preferences.");
